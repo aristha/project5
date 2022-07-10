@@ -1,5 +1,5 @@
 # TODO: Change the name of the org 
-org: sudkul
+org: tamhv
 app: serverless-todo-app
 service: serverless-todo-app
 
@@ -7,11 +7,12 @@ plugins:
   - serverless-webpack
   - serverless-iam-roles-per-function
   - serverless-plugin-tracing
+  - serverless-offline
+  - serverless-dynamodb-local
 
 provider:
   name: aws
   runtime: nodejs12.x
-  lambdaHashingVersion: '20201221'
 
   stage: ${opt:stage, 'dev'}
   region: ${opt:region, 'us-east-1'}
@@ -27,6 +28,7 @@ provider:
     TODOS_CREATED_AT_INDEX: CreatedAtIndex
     ATTACHMENT_S3_BUCKET: serverless-c4-todo-images-${self:provider.stage}
     SIGNED_URL_EXPIRATION: 300
+    IS_OFFLINE: true
 
   logs:
     # Enable API Gateway logs
@@ -41,7 +43,16 @@ provider:
             - xray:PutTraceSegments
           Resource: "*"
 
-
+custom:
+  serverless-offline:
+    httpPort: 3000
+  dynamodb:
+    start:
+      port: 8001
+      inMemory: true
+      migrate: true
+    stages: # Add this section of the config
+      - dev
 functions:
 
   Auth:
@@ -49,6 +60,15 @@ functions:
 
   # TODO: Configure this function - 
   # Provide iamRoleStatements property for performing Actions on DynamoDB
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Scan
+          - dynamodb:GetItem
+          - dynamodb:UpdateItem
+          - dynamodb:PutItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+  # Provide 
   GetTodos:
     handler: src/lambda/http/getTodos.handler
     events:
@@ -57,7 +77,11 @@ functions:
           path: todos
           cors: true
           authorizer: Auth
-
+    iamRoleStatements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+          Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
   # TODO: Configure this function - 
   # Provide iamRoleStatements property. Decide the Actions and AWS Resource. 
   # To refer to an AWS resource defined in the "Resources" section, you can use "Resource: !GetAtt <resource-name>.Arn"
@@ -73,6 +97,11 @@ functions:
           request:
             schemas:
               application/json: ${file(models/create-todo-model.json)}
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
 
   # TODO: Configure this function
   # Provide property for setting up CORS, Authorizer, iamRoleStatements, and request schemas
@@ -82,7 +111,16 @@ functions:
       - http:
           method: patch
           path: todos/{todoId}
-
+          cors: true
+          authorizer: Auth
+          request:
+            schemas:
+              application/json: ${file(models/update-todo-model.json)}
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:UpdateItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
   # TODO: Configure this function
   # Provide property for setting up CORS, Authorizer, iamRoleStatements
   DeleteTodo:
@@ -91,7 +129,13 @@ functions:
       - http:
           method: delete
           path: todos/{todoId}
-
+          cors: true
+          authorizer: Auth
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:UpdateItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
   # TODO: Configure this function
   # Provide property for setting up CORS, Authorizer, iamRoleStatements
   GenerateUploadUrl:
@@ -100,7 +144,14 @@ functions:
       - http:
           method: post
           path: todos/{todoId}/attachment
-
+          cors: true
+          authorizer:
+            FunctionArn: 
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:UpdateItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
 resources:
   Resources:
     # Add necessary AWS resources. You will need at least the following AWS resources
@@ -109,20 +160,70 @@ resources:
     GatewayResponseDefault4XX:
       Type: AWS::ApiGateway::GatewayResponse
       Properties:
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: '*'
+        ResponseType: MISSING_AUTHENTICATION_TOKEN
+        RestApiId:
+          Ref: RestApi
+        StatusCode: '404'
+        
     
     # TODO: Create a DynamoDB table with local secondary index and a composite key
     TodosTable:
       Type: AWS::DynamoDB::Table
       Properties:
-
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: todoId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: todoId
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${self:provider.environment.TODOS_TABLE}
+        LocalSecondaryIndexes:
+          - IndexName: ${self:provider.environment.TODOS_CREATED_AT_INDEX}
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL # What attributes will be copied to an index
     # TODO: Complete the bucket properties below. 
     # Do not forget to add the CorsConfiguration propoerty
     AttachmentsBucket:
       Type: AWS::S3::Bucket
       Properties:
+        BucketName: ${self:provider.environment.ATTACHMENT_S3_BUCKET}
+
 
     # TODO: Complete the policy below and attach it to the bucket defined above
     # For cross referencing the name of the bucket, use "!Ref AttachmentsBucket"
     BucketPolicy:
       Type: AWS::S3::BucketPolicy
       Properties:
+        Bucket:
+          Ref: ${self:provider.environment.ATTACHMENT_S3_BUCKET}
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Action:
+            - 's3:GetObject'
+          Effect: Allow
+          Resource: !Join
+            - ''
+            - - 'arn:aws:s3:::'
+              - !Ref DOC-EXAMPLE-BUCKET
+              - /*
+          Principal: '*'
+          Condition:
+            StringLike:
+              'aws:Referer':
+                - 'http://www.example.com/*'
+                - 'http://example.net/*'
