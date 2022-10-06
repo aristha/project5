@@ -95,7 +95,6 @@ functions:
           cors:
             origin: '*'
           authorizer: Auth
-          reqValidatorName: Validator
     iamRoleStatements:
         - Effect: Allow 
           Action:
@@ -177,7 +176,6 @@ functions:
           cors:
             origin: '*'
           authorizer: Auth
-          reqValidatorName: Validator
     iamRoleStatements:
       - Effect: Allow 
         Action:
@@ -201,7 +199,6 @@ functions:
           cors:
             origin: '*'
           authorizer: Auth
-          reqValidatorName: Validator
     iamRoleStatements:
       - Effect: Allow 
         Action:
