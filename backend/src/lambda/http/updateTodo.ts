@@ -20,7 +20,7 @@ export const handler = middy(
       headers: {
         'Access-Control-Allow-Origin': '*'
       },
-      body:  JSON.stringify(todo)
+      body: JSON.stringify(todo)
     }
   }
 );
@@ -29,6 +29,8 @@ handler
   .use(httpErrorHandler())
   .use(
     cors({
-      credentials: true
+      credentials: true,
+      origin:'*',
+      headers:'*'
     })
   )

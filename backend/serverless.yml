@@ -4,11 +4,15 @@ app: serverless-todo-app
 service: serverless-todo-app
 
 plugins:
+  - serverless-reqvalidator-plugin
+  - serverless-aws-documentation
   - serverless-webpack
   - serverless-iam-roles-per-function
   - serverless-plugin-tracing
   - serverless-offline
   - serverless-dynamodb-local
+
+configValidationMode: warn
 
 provider:
   name: aws
@@ -26,9 +30,9 @@ provider:
   environment:
     TODOS_TABLE: Todos-${self:provider.stage}
     TODOS_CREATED_AT_INDEX: CreatedAtIndex
-    ATTACHMENT_S3_BUCKET: serverless-c4-todo-images-${self:provider.stage}
+    ATTACHMENT_S3_BUCKET: tamhv2-serverless-c4-todo-images-${self:provider.stage}
     SIGNED_URL_EXPIRATION: 300
-    IS_OFFLINE: true
+    IS_OFFLINE: false
 
   logs:
     # Enable API Gateway logs
@@ -53,6 +57,19 @@ custom:
       migrate: true
     stages: # Add this section of the config
       - dev
+  documentation: 
+    api: 
+      info: 
+        version: v1.0.0
+        title: Todo API
+        description: Udacity Serverless Todo
+    models: 
+      - name: CreateRequest
+        contentType: application/json
+        schema: ${file(models/create-todo-model.json)}
+      - name: UpdateRequest
+        contentType: application/json
+        schema: ${file(models/update-todo-model.json)}
 functions:
 
   Auth:
@@ -75,9 +92,17 @@ functions:
       - http:
           method: get
           path: todos
-          cors: true
+          cors:
+            origin: '*'
           authorizer: Auth
+          reqValidatorName: Validator
     iamRoleStatements:
+        - Effect: Allow 
+          Action:
+          - "xray:PutTraceSegments"
+          - "xray:PutTelemetryRecords"
+          Resource:
+            - "*"
         - Effect: Allow
           Action:
             - dynamodb:Query
@@ -92,12 +117,22 @@ functions:
       - http:
           method: post
           path: todos
-          cors: true
+          cors: 
+            origin: '*'
           authorizer: Auth
-          request:
-            schemas:
-              application/json: ${file(models/create-todo-model.json)}
+          reqValidatorName: Validator
+          documentation: 
+            summary: Create a Todo
+            description: Create a Todo
+            requestModels: 
+              'application/json': CreateRequest
     iamRoleStatements:
+      - Effect: Allow 
+        Action:
+          - "xray:PutTraceSegments"
+          - "xray:PutTelemetryRecords"
+        Resource:
+          - "*"
       - Effect: Allow
         Action:
           - dynamodb:PutItem
@@ -111,12 +146,22 @@ functions:
       - http:
           method: patch
           path: todos/{todoId}
-          cors: true
+          cors:
+            origin: '*'
           authorizer: Auth
-          request:
-            schemas:
-              application/json: ${file(models/update-todo-model.json)}
+          reqValidatorName: Validator
+          documentation: 
+            summary: update todo
+            description: Update toto
+            requestModels: 
+              'application/json': UpdateRequest
     iamRoleStatements:
+      - Effect: Allow 
+        Action:
+          - "xray:PutTraceSegments"
+          - "xray:PutTelemetryRecords"
+        Resource:
+          - "*"
       - Effect: Allow
         Action:
           - dynamodb:UpdateItem
@@ -129,13 +174,22 @@ functions:
       - http:
           method: delete
           path: todos/{todoId}
-          cors: true
+          cors:
+            origin: '*'
           authorizer: Auth
+          reqValidatorName: Validator
     iamRoleStatements:
+      - Effect: Allow 
+        Action:
+          - "xray:PutTraceSegments"
+          - "xray:PutTelemetryRecords"
+        Resource:
+          - "*"
       - Effect: Allow
         Action:
           - dynamodb:UpdateItem
         Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+
   # TODO: Configure this function
   # Provide property for setting up CORS, Authorizer, iamRoleStatements
   GenerateUploadUrl:
@@ -144,16 +198,36 @@ functions:
       - http:
           method: post
           path: todos/{todoId}/attachment
-          cors: true
-          authorizer:
-            FunctionArn: 
+          cors:
+            origin: '*'
+          authorizer: Auth
+          reqValidatorName: Validator
     iamRoleStatements:
+      - Effect: Allow 
+        Action:
+          - "xray:PutTraceSegments"
+          - "xray:PutTelemetryRecords"
+        Resource:
+          - "*"
+      - Effect: Allow
+        Action:
+          - s3:PutObject 
+          - s3:GetObject 
+        Resource: arn:aws:s3:::${self:provider.environment.ATTACHMENT_S3_BUCKET}/*
       - Effect: Allow
         Action:
           - dynamodb:UpdateItem
         Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
 resources:
   Resources:
+    Validator:
+      Type: AWS::ApiGateway::RequestValidator
+      Properties: 
+        Name: 'request-body-validator'
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        ValidateRequestBody: true
+        ValidateRequestParameters: false
     # Add necessary AWS resources. You will need at least the following AWS resources
     # TODO: Fill the properties
     # Feel free to change the names as you like. 
@@ -161,13 +235,13 @@ resources:
       Type: AWS::ApiGateway::GatewayResponse
       Properties:
         ResponseParameters:
-          gatewayresponse.header.Access-Control-Allow-Origin: '*'
-        ResponseType: MISSING_AUTHENTICATION_TOKEN
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+          gatewayresponse.header.Access-Control-Allow-Methods: "'*'"
+        ResponseType: DEFAULT_4XX
         RestApiId:
-          Ref: RestApi
-        StatusCode: '404'
-        
-    
+          Ref: 'ApiGatewayRestApi'
+
     # TODO: Create a DynamoDB table with local secondary index and a composite key
     TodosTable:
       Type: AWS::DynamoDB::Table
@@ -201,29 +275,30 @@ resources:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${self:provider.environment.ATTACHMENT_S3_BUCKET}
-
+        CorsConfiguration:
+          CorsRules:
+            - AllowedOrigins:
+                - '*'
+              AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              MaxAge: 3000
 
     # TODO: Complete the policy below and attach it to the bucket defined above
     # For cross referencing the name of the bucket, use "!Ref AttachmentsBucket"
     BucketPolicy:
       Type: AWS::S3::BucketPolicy
       Properties:
-        Bucket:
-          Ref: ${self:provider.environment.ATTACHMENT_S3_BUCKET}
+        Bucket: !Ref AttachmentsBucket
         PolicyDocument:
-          Version: 2012-10-17
+          Version: "2012-10-17"
           Statement:
-          - Action:
-            - 's3:GetObject'
-          Effect: Allow
-          Resource: !Join
-            - ''
-            - - 'arn:aws:s3:::'
-              - !Ref DOC-EXAMPLE-BUCKET
-              - /*
-          Principal: '*'
-          Condition:
-            StringLike:
-              'aws:Referer':
-                - 'http://www.example.com/*'
-                - 'http://example.net/*'
+          - Action: 's3:*'
+            Principal: '*'
+            Effect: Allow
+            Resource: arn:aws:s3:::${self:provider.environment.ATTACHMENT_S3_BUCKET}/*

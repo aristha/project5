@@ -19,6 +19,11 @@
         "type": "boolean",
         "title": "done",
         "default": ""
+      },
+      "attachmentUrl": {
+        "type": "string",
+        "title": "attachmentUrl",
+        "default": ""
       }
     }
   }

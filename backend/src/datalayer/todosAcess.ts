@@ -1,21 +1,25 @@
 import * as AWS from 'aws-sdk'
 import * as AWSXRay from 'aws-xray-sdk'
-import { DeleteItemInput, DocumentClient, PutItemInput, QueryInput, UpdateItemInput } from 'aws-sdk/clients/dynamodb'
+import { DeleteItemInput, PutItemInput, QueryInput, UpdateItemInput } from 'aws-sdk/clients/dynamodb'
 import { createLogger } from '../utils/logger'
 import { TodoItem } from '../models/TodoItem'
 import { TodoUpdate } from '../models/TodoUpdate';
 import { CreateTodoRequest } from '../requests/CreateTodoRequest'
 import { UpdateTodoRequest } from '../requests/UpdateTodoRequest'
 import { v4 as uuidv4 } from 'uuid';
-// const XAWS = AWSXRay.captureAWS(AWS)
-
-const logger = createLogger('TodosAccess')
-const isOffline = process.env.IS_OFFLINE
+const XAWS = AWSXRay.captureAWS(AWS);
+const S3 = new XAWS.S3({
+  signatureVersion: 'v4'
+});
+const bucketName = process.env.ATTACHMENT_S3_BUCKET;
+const urlExpiration = process.env.SIGNED_URL_EXPIRATION;
+const logger = createLogger('TodosAccess');
+// const isOffline = process.env.IS_OFFLINE;
 
 export class TodosAccess {
 
- 
-  constructor( 
+
+  constructor(
     private readonly docClient = createDynamoDBClient(),
     private readonly todoTable = process.env.TODOS_TABLE
   ) { }
@@ -26,29 +30,38 @@ export class TodosAccess {
    * @returns a user id from a JWT token
    */
   async getTodosForUser(userId: string): Promise<TodoItem[]> {
-    logger.info('Query all todos' + userId );
+    logger.info('Query all todos' + userId);
     const param: QueryInput = {
       KeyConditions: {
         "userId": {
           AttributeValueList: [
-             {"S":userId}
-            ],
+            { "S": userId }
+          ],
           ComparisonOperator: "EQ"
         }
       },
       TableName: this.todoTable,
     }
-    const result = await this.docClient.query(param).promise();
-    const todos = result.Items.map(data => {
-      return {
-        name: AWS.DynamoDB.Converter.output(data["name"]),
-        createdAt: AWS.DynamoDB.Converter.output(data["createdAt"]),
-        todoId: AWS.DynamoDB.Converter.output(data["todoId"]),
-        dueDate: AWS.DynamoDB.Converter.output(data["dueDate"]),
-        done: AWS.DynamoDB.Converter.output(data["done"])
-      };
-    })
-    return todos as TodoItem[];
+    try {
+      const result = await this.docClient.query(param).promise();
+      logger.info('response query', result);
+      const todos = result.Items.map(data => {
+        return {
+          name: AWS.DynamoDB.Converter.output(data["name"]),
+          createdAt: AWS.DynamoDB.Converter.output(data["createdAt"]),
+          todoId: AWS.DynamoDB.Converter.output(data["todoId"]),
+          dueDate: AWS.DynamoDB.Converter.output(data["dueDate"]),
+          done: AWS.DynamoDB.Converter.output(data["done"]),
+          attachmentUrl:AWS.DynamoDB.Converter.output(data["attachmentUrl"]),
+        };
+      })
+      return todos as TodoItem[];
+    } catch (error) {
+      logger.warning
+        ('error query: ', error);
+      return [];
+    }
+
   }
 
   /**
@@ -66,11 +79,10 @@ export class TodosAccess {
         "createdAt": { "S": createAt.toUTCString() },
         "name": { "S": createTodoRequest.name },
         "dueDate": { "S": createTodoRequest.dueDate },
-        // "done": { "BOOL": createTodoRequest.done },
-        // "attachmentUrl": { "S": createTodoRequest.attachmentUrl },
+        "attachmentUrl": { "S": createTodoRequest.attachmentUrl ?? '' },
         "userId": { "S": userId },
-        "todoId": {"S": todoId},
-        "done": {"BOOL": false}
+        "todoId": { "S": todoId },
+        "done": { "BOOL": false }
       },
       TableName: this.todoTable
     }
@@ -84,7 +96,6 @@ export class TodosAccess {
     } as TodoItem;
   }
 
-
   /**
    * Update a todo By Key
    * @param event an event from API Gateway
@@ -92,7 +103,7 @@ export class TodosAccess {
    * @returns Todo 
    */
   async updateTodo(userId: string, todoId: string, updateTodoRequest: UpdateTodoRequest): Promise<TodoUpdate> {
-
+    logger.info('data update', updateTodoRequest);
     const param: UpdateItemInput = {
       Key: {
         "todoId": {
@@ -117,11 +128,17 @@ export class TodosAccess {
           "Value": {
             "BOOL": updateTodoRequest.done
           }
+        },
+        "attachmentUrl": {
+          "Value": {
+            "S": updateTodoRequest.attachmentUrl ?? ''
+          }
         }
       },
       TableName: this.todoTable
     }
     const result = await this.docClient.updateItem(param).promise();
+    logger.info('ressponse after update', updateTodoRequest);
     return result.$response.data as TodoUpdate;
   }
 
@@ -149,15 +166,63 @@ export class TodosAccess {
     return '';
   }
 
-
+  /**
+   * Delete a todo By Key
+   * @param event an event from API Gateway
+   *
+   * @returns Todo 
+   */
+  async createAttachmentPresignedUrl(userId: string, todoId: string): Promise<string> {
+    logger.info('get URL updload' + userId);
+    try {
+      let attachmentUrl = S3.getSignedUrl('putObject', {
+        Bucket: bucketName,
+        Key: todoId,
+        Expires: Number(urlExpiration)
+      });
+      logger.info('url ' + attachmentUrl);
+      const param: UpdateItemInput = {
+        Key: {
+          "todoId": {
+            "S": todoId
+          },
+          "userId": {
+            "S": userId
+          }
+        },
+        AttributeUpdates: {
+          
+          "attachmentUrl": {
+            "Value": {
+              "S": attachmentUrl
+            }
+          }
+        },
+        TableName: this.todoTable
+      }
+      await this.docClient.updateItem(param).promise();
+      return attachmentUrl;
+    } catch (error) {
+      logger.error('get url error', error);
+      return '';
+    }
+   
+  }
 }
 function createDynamoDBClient() {
-  if (isOffline) {
-    console.log('Creating a local dynamoDB instance')
-    return new AWS.DynamoDB({
-      region: 'localhost',
-      endpoint: 'http://localhost:8001'
-    });
+  // if (isOffline) {
+  //   console.log('Creating a local dynamoDB instance')
+  //   return new AWS.DynamoDB({
+  //     region: 'localhost',
+  //     endpoint: 'http://localhost:8001'
+  //   });
+  // }
+  logger.info('create DB');
+  try {
+    let db = new XAWS.DynamoDB();
+    return db;
+  } catch (error) {
+    logger.error('error Create DB', error);
+    return null;
   }
-  return new AWS.DynamoDB();
 }

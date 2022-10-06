@@ -14,7 +14,8 @@ export const handler = middy(
     return {
       statusCode: 201,
       headers: {
-        'Access-Control-Allow-Origin': '*'
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods':'*'
       },
       body: JSON.stringify(
         {
@@ -27,6 +28,8 @@ export const handler = middy(
 
 handler.use(
   cors({
-    credentials: true
+    credentials: true,
+    origin:'*',
+    headers:'*'
   })
 )

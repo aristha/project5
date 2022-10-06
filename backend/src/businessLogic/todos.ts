@@ -12,10 +12,10 @@ const todosAccess = new TodosAccess()
  *
  * @returns a user id from a JWT token
  */
- export async function getTodosForUser(userId: string): Promise<TodoItem[]> {
+export async function getTodosForUser(userId: string): Promise<TodoItem[]> {
 
-    return todosAccess.getTodosForUser(userId);
-  }
+  return todosAccess.getTodosForUser(userId);
+}
 
 /**
  * Get a todos from user
@@ -38,8 +38,8 @@ export async function createTodo(userId: string, createTodoRequest: CreateTodoRe
 export async function updateTodo(userId: string, todoId: string, updateTodoRequest: UpdateTodoRequest): Promise<TodoUpdate> {
   return todosAccess.updateTodo(userId, todoId, updateTodoRequest);
 }
-  
-  
+
+
 /**
  * Delete a todo By Key
  * @param event an event from API Gateway
@@ -47,6 +47,16 @@ export async function updateTodo(userId: string, todoId: string, updateTodoReque
  * @returns Todo 
  */
 export async function deleteTodo(userId: string, todoId: string): Promise<string> {
-    return todosAccess.deleteTodo(userId, todoId);
+  return todosAccess.deleteTodo(userId, todoId);
 }
-  
+
+
+/**
+ * Get URL
+ * @param event an event from API Gateway
+ *
+ * @returns URL 
+ */
+ export async function createAttachmentPresignedUrl(userId: string, todoId: string): Promise<string> {
+  return todosAccess.createAttachmentPresignedUrl(userId, todoId);
+}
