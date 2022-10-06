@@ -11,7 +11,6 @@ const XAWS = AWSXRay.captureAWS(AWS);
 const S3 = new XAWS.S3({
   signatureVersion: 'v4'
 });
-const bucketName = process.env.ATTACHMENT_S3_BUCKET;
 const urlExpiration = process.env.SIGNED_URL_EXPIRATION;
 const logger = createLogger('TodosAccess');
 // const isOffline = process.env.IS_OFFLINE;
@@ -21,7 +20,8 @@ export class TodosAccess {
 
   constructor(
     private readonly docClient = createDynamoDBClient(),
-    private readonly todoTable = process.env.TODOS_TABLE
+    private readonly todoTable = process.env.TODOS_TABLE,
+    private readonly bucketName = process.env.ATTACHMENT_S3_BUCKET
   ) { }
   /**
    * Get a todos from user
@@ -175,8 +175,9 @@ export class TodosAccess {
   async createAttachmentPresignedUrl(userId: string, todoId: string): Promise<string> {
     logger.info('get URL updload' + userId);
     try {
+
       let attachmentUrl = S3.getSignedUrl('putObject', {
-        Bucket: bucketName,
+        Bucket: this.bucketName,
         Key: todoId,
         Expires: Number(urlExpiration)
       });
@@ -194,7 +195,7 @@ export class TodosAccess {
           
           "attachmentUrl": {
             "Value": {
-              "S": attachmentUrl
+              "S":  `https://${this.bucketName}.s3.amazonaws.com/${todoId}`
             }
           }
         },
