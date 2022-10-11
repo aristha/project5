@@ -29,7 +29,7 @@ export class TodosAccess {
    *
    * @returns a user id from a JWT token
    */
-  async getTodosForUser(userId: string): Promise<TodoItem[]> {
+  async getTodosForUser(userId: string, toDoName?: string): Promise<TodoItem[]> {
     logger.info('Query all todos' + userId);
     const param: QueryInput = {
       KeyConditions: {
@@ -40,7 +40,17 @@ export class TodosAccess {
           ComparisonOperator: "EQ"
         }
       },
+
       TableName: this.todoTable,
+    }
+    if (toDoName && toDoName.trim() != '') {
+      param.ExpressionAttributeValues = {
+        ':todoName': { S: toDoName }
+      };
+      param.ExpressionAttributeNames = {
+        "#name": "name"
+      }
+      param.FilterExpression = 'contains (#name, :todoName)';
     }
     try {
       const result = await this.docClient.query(param).promise();
@@ -52,12 +62,12 @@ export class TodosAccess {
           todoId: AWS.DynamoDB.Converter.output(data["todoId"]),
           dueDate: AWS.DynamoDB.Converter.output(data["dueDate"]),
           done: AWS.DynamoDB.Converter.output(data["done"]),
-          attachmentUrl:AWS.DynamoDB.Converter.output(data["attachmentUrl"]),
+          attachmentUrl: AWS.DynamoDB.Converter.output(data["attachmentUrl"]),
         };
       })
       return todos as TodoItem[];
     } catch (error) {
-      logger.warning
+      logger.error
         ('error query: ', error);
       return [];
     }
@@ -192,10 +202,10 @@ export class TodosAccess {
           }
         },
         AttributeUpdates: {
-          
+
           "attachmentUrl": {
             "Value": {
-              "S":  `https://${this.bucketName}.s3.amazonaws.com/${todoId}`
+              "S": `https://${this.bucketName}.s3.amazonaws.com/${todoId}`
             }
           }
         },
@@ -207,7 +217,7 @@ export class TodosAccess {
       logger.error('get url error', error);
       return '';
     }
-   
+
   }
 }
 function createDynamoDBClient() {

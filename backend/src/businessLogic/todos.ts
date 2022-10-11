@@ -12,9 +12,9 @@ const todosAccess = new TodosAccess()
  *
  * @returns a user id from a JWT token
  */
-export async function getTodosForUser(userId: string): Promise<TodoItem[]> {
+export async function getTodosForUser(userId: string, toDoName: string): Promise<TodoItem[]> {
 
-  return todosAccess.getTodosForUser(userId);
+  return todosAccess.getTodosForUser(userId, toDoName);
 }
 
 /**

@@ -1,22 +1,24 @@
 import React, { Component } from 'react'
 import { Link, Route, Router, Switch } from 'react-router-dom'
-import { Grid, Menu, Segment } from 'semantic-ui-react'
-
+import { Grid, Segment } from 'semantic-ui-react'
+import type { MenuProps, MenuTheme } from 'antd';
+import { Menu, Layout, Button } from 'antd';
 import Auth from './auth/Auth'
 import { EditTodo } from './components/EditTodo'
 import { LogIn } from './components/LogIn'
 import { NotFound } from './components/NotFound'
 import { Todos } from './components/Todos'
-
-export interface AppProps {}
+import 'antd/dist/antd.css';
+export interface AppProps { }
 
 export interface AppProps {
   auth: Auth
   history: any
 }
 
-export interface AppState {}
-
+export interface AppState { }
+const { Header } = Layout;
+const { Item, SubMenu } = Menu;
 export default class App extends Component<AppProps, AppState> {
   constructor(props: AppProps) {
     super(props)
@@ -35,13 +37,23 @@ export default class App extends Component<AppProps, AppState> {
 
   render() {
     return (
+
       <div>
-        <Segment style={{ padding: '8em 0em' }} vertical>
+        <Header className="app-header">
+          <div className="app-header__logo-search-section">
+            <div className="app-header__logo">
+              <Link to="/">
+                Home
+              </Link>
+              {this.logInLogOutButton()}
+            </div>
+          </div>
+        </Header>
+        {this.props.auth.isAuthenticated() && <Segment style={{ padding: '8em 0em' }} vertical>
           <Grid container stackable verticalAlign="middle">
             <Grid.Row>
               <Grid.Column width={16}>
                 <Router history={this.props.history}>
-                  {this.generateMenu()}
 
                   {this.generateCurrentPage()}
                 </Router>
@@ -49,6 +61,7 @@ export default class App extends Component<AppProps, AppState> {
             </Grid.Row>
           </Grid>
         </Segment>
+        }
       </div>
     )
   }
@@ -56,11 +69,11 @@ export default class App extends Component<AppProps, AppState> {
   generateMenu() {
     return (
       <Menu>
-        <Menu.Item name="home">
+        <Item key="/home" title="home">
           <Link to="/">Home</Link>
-        </Menu.Item>
+        </Item>
 
-        <Menu.Menu position="right">{this.logInLogOutButton()}</Menu.Menu>
+        {this.logInLogOutButton()}
       </Menu>
     )
   }
@@ -68,23 +81,23 @@ export default class App extends Component<AppProps, AppState> {
   logInLogOutButton() {
     if (this.props.auth.isAuthenticated()) {
       return (
-        <Menu.Item name="logout" onClick={this.handleLogout}>
-          Log Out
-        </Menu.Item>
+        <div style={{ float: 'right' }}>
+          <Button onClick={this.handleLogout} type="primary">Log Out</Button>
+        </div>
       )
     } else {
       return (
-        <Menu.Item name="login" onClick={this.handleLogin}>
-          Log In
-        </Menu.Item>
+        <div style={{ float: 'right' }}>
+          <Button onClick={this.handleLogin} type="primary">Sign In</Button>
+        </div>
+
+
       )
     }
   }
 
   generateCurrentPage() {
-    if (!this.props.auth.isAuthenticated()) {
-      return <LogIn auth={this.props.auth} />
-    }
+
 
     return (
       <Switch>
@@ -100,7 +113,7 @@ export default class App extends Component<AppProps, AppState> {
           path="/todos/:todoId/edit"
           exact
           render={props => {
-            return <EditTodo {...props} auth={this.props.auth} />
+            return <EditTodo {...props} history={this.props.history} auth={this.props.auth} />
           }}
         />
 
